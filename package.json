@@ -1,0 +1,13 @@
+{
+  "name": "animal-kingdom-live",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TikTok LIVE animal collection game and real-time overlay",
+  "workspaces": ["apps/server", "apps/web"],
+  "scripts": {
+    "dev": "concurrently -k -n SERVER,WEB -c blue,green \"npm run dev -w @animal-kingdom/server\" \"npm run dev -w @animal-kingdom/web\"",
+    "build": "npm run build -w @animal-kingdom/server && npm run build -w @animal-kingdom/web",
+    "typecheck": "npm run typecheck -w @animal-kingdom/server && npm run typecheck -w @animal-kingdom/web"
+  },
+  "devDependencies": { "concurrently": "^9.1.2", "typescript": "^5.7.3" }
+}
