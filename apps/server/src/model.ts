@@ -42,5 +42,5 @@ export function findAnimal(value: string) {
 }
 export function getAnimalListReply(): string {
   return `Animales disponibles (${ANIMALS.length}): ` + ANIMALS.map(a => `${a.emoji} ${a.name}`).join(' · ')
-    + '. Envía una rosa y luego escribe !animal seguido del nombre.';
+    + '. Envía una rosa y luego escribe directamente el nombre del animal que quieres.';
 }

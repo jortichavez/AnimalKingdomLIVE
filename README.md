@@ -1,60 +1,54 @@
-# Animal Kingdom LIVE — MVP 0.5 (conector TikTok experimental)
+# Animal Kingdom LIVE — MVP v0.6
 
-Versión de desarrollo con persistencia SQLite, simulador y adaptador experimental para recibir eventos de TikTok LIVE. La integración usa una biblioteca comunitaria no oficial; puede dejar de funcionar si TikTok cambia sus servicios internos.
+Versión de desarrollo con SQLite, panel web, overlay para OBS y conexión experimental a TikTok LIVE. La integración usa una biblioteca comunitaria no oficial; puede dejar de funcionar si TikTok cambia sus servicios internos.
 
 ## Requisitos
-- Node.js 20 o superior (recomendado Node.js 22 LTS para compatibilidad de paquetes)
-- npm 10 o superior
+- Node.js 22 o superior.
+- npm 10 o superior.
+- El paquete local `ttl-live` debe estar disponible en `../tiktok-signer/packages/tiktok-live` (la carpeta `tiktok-signer` debe estar al mismo nivel que `AnimalKingdomLIVE`, según la configuración actual).
 
 ## Instalar y ejecutar
-En la carpeta raíz:
+En la carpeta raíz del proyecto:
 
 ```bash
 npm install
+npm run typecheck
 npm run dev
 ```
 
-- Web: http://localhost:5173
+- Panel web: http://localhost:5173
 - API: http://localhost:3001/health
 - Estado: http://localhost:3001/api/state
+- Overlay para OBS: http://localhost:5173/?overlay=1
 
-## Conectar TikTok LIVE (primera prueba)
-1. Instala Node.js 22 LTS. En la carpeta raíz ejecuta `npm install` y después `npm run dev`.
-2. Inicia un LIVE real en la cuenta de TikTok que vas a probar. La conexión de eventos no inicia la transmisión por ti.
-3. Abre `http://localhost:5173` (no la URL del overlay) y busca el panel **Conectar TikTok LIVE**.
-4. Escribe el usuario exacto de TikTok sin `@` y pulsa **Conectar con TikTok**.
-5. Espera el estado **CONNECTED**. Prueba primero un comentario normal, luego un follow de otra cuenta y una rosa de prueba. El comentario `!animal leon` debe reclamar una elección pendiente.
-6. Comprueba el panel y el overlay `http://localhost:5173/?overlay=1` para ver los cambios. No uses el botón de simulación para validar eventos reales.
-7. Al terminar, pulsa **Desconectar** y finaliza el LIVE desde TikTok/OBS.
+## Cómo funciona
+- Un usuario recibe un animal aleatorio la primera vez que sigue la cuenta durante la campaña.
+- Cada rosa válida crea un crédito de elección pendiente para ese usuario.
+- Por cada rosa puede elegir un animal escribiendo únicamente el nombre en el chat, por ejemplo `panda`, `león` o `tigre`. No necesita `!animal`.
+- Si envía 3 rosas, tendrá 3 elecciones pendientes y podrá canjearlas con 3 comentarios válidos, incluso eligiendo el mismo animal más de una vez.
+- Las elecciones no utilizadas permanecen pendientes entre directos y reinicios, porque se guardan en SQLite.
+- Los comentarios que no coinciden con un animal del catálogo se ignoran.
+- Los animales repetidos están permitidos y el Top 10 se calcula por cantidad total de animales por especie.
+- Los eventos con identificador se deduplican para evitar premios duplicados.
 
-### Limitaciones importantes de esta integración experimental
-- El conector recibe comentarios, follows y regalos, pero no emite respuestas automáticas al chat. `!animales` se detecta en el backend, pero la lista no se publica automáticamente en el chat.
-- La conexión usa `tiktok-live-connector`, una biblioteca no oficial basada en servicios internos de TikTok. No es una API oficial ni se garantiza disponibilidad. Ver documentación: https://github.com/zerodytrash/TikTok-Live-Connector
-- Solo las rosas crean créditos; otros regalos se ignoran. Para regalos en racha se procesa el conteo final para evitar contar cada actualización como una rosa adicional.
-- Prueba primero con una cuenta secundaria y una rosa de bajo costo. No compartas cookies, contraseñas ni tokens de sesión.
-- El conector necesita que la cuenta indicada esté transmitiendo y que el LIVE sea accesible. Si la conexión falla, revisa el estado y la consola del backend.
+## Conectar TikTok LIVE
+1. Abre un LIVE real desde la cuenta de TikTok que vas a probar. La aplicación no inicia el LIVE por ti.
+2. Ejecuta `npm run dev` en la raíz del proyecto.
+3. Entra a http://localhost:5173, escribe el usuario de TikTok sin `@` y pulsa **Conectar con TikTok**.
+4. Cuando el estado indique conexión, prueba con una cuenta secundaria: sigue la cuenta, envía una rosa y comenta el nombre de un animal.
+5. Comprueba el panel y el overlay. No uses los botones de simulación para validar eventos reales.
+6. Al terminar, desconecta TikTok desde el panel.
 
-## Reglas incluidas
-- Un animal aleatorio por usuario la primera vez que sigue durante la campaña.
-- Cada rosa crea una elección pendiente que persiste hasta que el usuario la reclame.
-- El comando `!animal panda` consume una sola elección pendiente y añade un panda a la colección.
-- Se permiten animales repetidos.
-- Top 10 ordenado por el total de animales por especie.
-- Eventos de demo con ID para evitar procesarlos dos veces.
-- Persistencia SQLite en `apps/server/data/animal-kingdom.sqlite` (la carpeta se crea automáticamente).
+## Prueba manual desde el panel
+1. Pulsa **Simular rosa (crear pendiente)** para el usuario que aparece en el campo.
+2. Escribe `panda` en el campo de animal y pulsa **Enviar comentario**.
+3. Comprueba que desaparece una elección pendiente y se suma un panda al reino.
+4. Simula tres rosas y envía tres comentarios de animales: cada comentario válido consume un solo crédito.
 
-## Probar manualmente
-1. En la web escribe `luna23` como usuario y pulsa **Simular seguidor**.
-2. Pulsa **Simular rosa (crear pendiente)**.
-3. Deja el comando `!animal panda` y pulsa **Enviar comando de chat**.
-4. Verifica que la elección pendiente desaparece y el panda se suma al reino.
-5. Reinicia `npm run dev`: los datos deben seguir ahí.
-
-También se pueden probar endpoints:
+También se pueden probar los endpoints desde PowerShell o una herramienta como Postman:
 ```bash
-curl -X POST http://localhost:3001/demo/follow -H "Content-Type: application/json" -d '{"username":"luna23"}'
 curl -X POST http://localhost:3001/demo/gift -H "Content-Type: application/json" -d '{"username":"luna23","giftName":"Rose"}'
-curl -X POST http://localhost:3001/demo/chat -H "Content-Type: application/json" -d '{"username":"luna23","message":"!animal panda"}'
+curl -X POST http://localhost:3001/demo/chat -H "Content-Type: application/json" -d '{"username":"luna23","message":"panda"}'
 ```
 
 Para limpiar los datos de demo:
@@ -64,10 +58,11 @@ curl -X POST http://localhost:3001/demo/reset
 Este endpoint es solo para desarrollo local; no debe exponerse públicamente en producción.
 
 ## OBS
-Añade una fuente **Navegador** con URL `http://localhost:5173/?overlay=1` para mostrar la vista pública sin controles de prueba ni la lista de elecciones pendientes. El overlay incluye la instrucción breve: envía una rosa y después escribe `!animal panda` (cambia panda por la especie que quieras); cada rosa concede una elección y las elecciones sin reclamar permanecen pendientes. Para un directo vertical, prueba 1080 × 1920; para un directo horizontal, 1920 × 1080. En esta versión la vista pública usa un fondo oscuro opaco: colócala en una zona reservada de tu composición de OBS o ajusta el tamaño/recorte para que no tape el contenido principal. La página de control completa sigue disponible en `http://localhost:5173`.
+Añade una fuente **Navegador** con URL `http://localhost:5173/?overlay=1`. Para un directo vertical, prueba 1080 × 1920; para uno horizontal, 1920 × 1080. El overlay muestra la colección sin controles de prueba.
 
-## Limitaciones conocidas
-- La identidad demo usa el nombre normalizado; la integración real deberá usar el ID estable de TikTok.
-- La recepción real de follows, regalos y chat no está implementada.
-- Los eventos solo pueden deduplicarse de forma fiable cuando el adaptador dispone de un ID de evento estable.
-- Los emojis son provisionales; modelos 3D se añadirán después.
+## Limitaciones
+- La integración depende de un paquete comunitario no oficial y no está respaldada por TikTok.
+- Solo las rosas se contabilizan; otros regalos se ignoran.
+- Los regalos en racha se procesan al recibir la actualización final para evitar duplicados.
+- No se envían respuestas automáticas al chat de TikTok.
+- Prueba primero con una cuenta secundaria y no compartas contraseñas, cookies ni tokens de sesión.

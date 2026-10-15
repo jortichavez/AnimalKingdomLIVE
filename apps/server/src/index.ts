@@ -6,10 +6,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { z } from 'zod';
-import { WebcastPushConnection } from 'tiktok-live-connector/legacy';
-import { WebcastEvent, ControlEvent } from 'tiktok-live-connector';
 import { TikTokLive, SOCIAL_ACTION } from 'ttl-live';
-import { ANIMALS, findAnimal, getAnimalListReply, type AnimalId } from './model.js';
+import { ANIMALS, findAnimal, type AnimalId } from './model.js';
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
@@ -193,17 +191,22 @@ const chatSchema = z.object({ username:z.string().min(1).max(64).default('fan_de
 app.post('/demo/chat', async (request,reply) => {
   const p=chatSchema.safeParse(request.body ?? {});
   if(!p.success) return reply.code(400).send({error:p.error.flatten()});
+
   const message = p.data.message.trim();
-  if (/^!animales\s*$/i.test(message)) {
-    return { command: 'animales', reply: getAnimalListReply(), animals: ANIMALS };
-  }
-  const match=message.match(/^!animal\s+(.+)$/i);
-  if(!match) return reply.code(400).send({error:'Usa !animal leon o !animales para ver el catálogo.'});
+  const animal = findAnimal(message);
+
+  // Igual que en TikTok: no se requieren comandos y los comentarios normales se ignoran.
+  if (!animal) return { ignored: true, reason: 'El comentario no coincide con un animal del catálogo.' };
+
   const userId=p.data.userId ?? `demo:${p.data.username.toLowerCase()}`;
-  const result=processChoice(userId,p.data.username,match[1]!,p.data.eventId ?? randomUUID());
+  const result=processChoice(userId,p.data.username,animal.id,p.data.eventId ?? randomUUID());
   if ('error' in result) return reply.code(400).send(result);
-  if ('noPending' in result && result.noPending) return { ...result, reply: 'No tienes elecciones pendientes. Envía una rosa antes de elegir un animal.' };
-  if ('animal' in result) return { ...result, reply: `¡@${p.data.username} ahora es parte del reino como ${result.animal!.emoji} ${result.animal!.name}!` };
+  if ('noPending' in result && result.noPending) {
+    return { ...result, reply: 'No tienes rosas pendientes. Envía una rosa antes de elegir un animal.' };
+  }
+  if ('animal' in result && result.animal) {
+    return { ...result, reply: `¡@${p.data.username} ahora es parte del reino como ${result.animal.emoji} ${result.animal.name}!` };
+  }
   return result;
 });
 app.post('/demo/reset', async () => {
@@ -244,14 +247,6 @@ app.post('/api/tiktok/connect', async (request, reply) => {
   setTikTokStatus('connecting', `Conectando con @${username}…`, username);
 
   const connection = new TikTokLive(username);
-  connection.on('unknown', (data) => {
-  console.log('[TIKTOK UNKNOWN]', {
-      method: data.method,
-      msgId: data.msgId,
-      isHistory: data.isHistory,
-      payloadLength: data.payload?.length,
-    });
-  });
   tiktokConnection = connection;
 
   connection.on('error', (error) => {
@@ -272,47 +267,30 @@ app.post('/api/tiktok/connect', async (request, reply) => {
   });
 
   connection.on('chat', (data) => {
-    
     if (data.isHistory) return;
 
     const platformUserId = String(data.user.userId || data.user.uniqueId || 'unknown');
     const displayName = data.user.nickname || data.user.uniqueId || 'espectador';
     const comment = String(data.comment ?? '').trim();
-
-    console.log('[CHAT TIKTOK]', JSON.stringify({
-      user: data.user?.uniqueId,
-      comment: data.comment,
-      isHistory: data.isHistory,
-      msgId: data.msgId,
-    }));
-
     if (!comment) return;
 
-    if (/^!animales\s*$/i.test(comment)) {
-      emitState('chat', `@${displayName} consultó el catálogo de animales`);
-      io.emit('tiktok:catalog-request', {
-        username: displayName,
-        reply: getAnimalListReply(),
-        animals: ANIMALS,
-      });
-      return;
-    }
-
-    const match = comment.match(/^!animal\s+(.+)$/i);
-    if (!match) return;
+    // La persona escribe directamente el nombre del animal, sin comandos.
+    // Los comentarios normales se ignoran; solo se procesan nombres del catálogo.
+    const animal = findAnimal(comment);
+    if (!animal) return;
 
     const id = eventKey(
       data,
-      `tt-chat:${platformUserId}:${comment}:${Date.now()}`,
+      `tt-chat-choice:${platformUserId}:${data.msgId ?? randomUUID()}`,
     );
+    const result = processChoice(platformUserId, displayName, animal.id, id);
 
-    const result = processChoice(platformUserId, displayName, match[1]!, id);
-    console.log('[ANIMAL CHOICE RESULT]', result);
-
-    if ('error' in result) {
-      emitState('chat', `@${displayName}: animal no válido; escribió ${match[1]}`);
-    } else if ('noPending' in result && result.noPending) {
-      emitState('chat', `@${displayName} escribió !animal sin elecciones pendientes`);
+    if ('animal' in result && result.animal) {
+      // processChoice ya emite el estado y consume exactamente un crédito.
+      return;
+    }
+    if ('noPending' in result && result.noPending) {
+      emitState('chat', `@${displayName} escribió ${animal.name}, pero no tiene rosas pendientes por canjear`);
     }
   });
 
