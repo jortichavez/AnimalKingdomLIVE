@@ -6,7 +6,10 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { z } from 'zod';
-import { ANIMALS, type AnimalId } from './model.js';
+import { WebcastPushConnection } from 'tiktok-live-connector/legacy';
+import { WebcastEvent, ControlEvent } from 'tiktok-live-connector';
+import { TikTokLive, SOCIAL_ACTION } from 'ttl-live';
+import { ANIMALS, findAnimal, getAnimalListReply, type AnimalId } from './model.js';
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
@@ -47,6 +50,22 @@ db.exec(`
   );
 `);
 const now = () => new Date().toISOString();
+let tiktokConnection: TikTokLive | null = null;
+let tiktokStatus: { status: 'disconnected'|'connecting'|'connected'|'error'; username?: string; message: string } = { status: 'disconnected', message: 'TikTok no conectado' };
+const seenTikTokEvents = new Set<string>();
+function setTikTokStatus(status: typeof tiktokStatus.status, message: string, username?: string) {
+  tiktokStatus = { status, message, ...(username ? { username } : {}) };
+  io.emit('tiktok:status', tiktokStatus);
+  io.emit('kingdom:event', { kind: status === 'error' ? 'error' : 'system', message: `TikTok: ${message}` });
+}
+function eventKey(data: any, fallback: string) {
+  const key = data?.msgId ?? data?.messageId ?? data?.eventId ?? data?.logId;
+  if (key !== undefined && key !== null && String(key)) return `tt:${String(key)}`;
+  if (seenTikTokEvents.has(fallback)) return fallback;
+  seenTikTokEvents.add(fallback);
+  if (seenTikTokEvents.size > 5000) seenTikTokEvents.clear();
+  return fallback;
+}
 const campaignId = 'default-campaign';
 db.prepare(`INSERT OR IGNORE INTO campaigns(id,name,active,created_at) VALUES(?,?,1,?)`)
   .run(campaignId, 'Campaña principal', now());
@@ -73,18 +92,13 @@ function awardAnimal(userId: string, animalId: AnimalId, source: 'follow'|'gift'
 function randomAnimal() { return ANIMALS[Math.floor(Math.random() * ANIMALS.length)]!; }
 
 function snapshot() {
-  const followers = db.prepare(`
-    SELECT aa.id, u.username, aa.animal_id AS animalId, aa.source, aa.created_at AS createdAt,
-           a.name AS animalName, a.emoji
+  const awardRows = db.prepare(`
+    SELECT aa.id, u.username, aa.animal_id AS animalId, aa.source, aa.created_at AS createdAt
     FROM animal_awards aa JOIN users u ON u.id=aa.user_id
-    JOIN (SELECT 'fox' id,'Zorro' name,'🦊' emoji UNION ALL SELECT 'panda','Panda','🐼'
-      UNION ALL SELECT 'lion','León','🦁' UNION ALL SELECT 'wolf','Lobo','🐺'
-      UNION ALL SELECT 'frog','Rana','🐸' UNION ALL SELECT 'cat','Gato','🐱'
-      UNION ALL SELECT 'bear','Oso','🐻' UNION ALL SELECT 'rabbit','Conejo','🐰'
-      UNION ALL SELECT 'penguin','Pingüino','🐧' UNION ALL SELECT 'tiger','Tigre','🐯'
-      UNION ALL SELECT 'unicorn','Unicornio','🦄' UNION ALL SELECT 'dragon','Dragón','🐲') a ON a.id=aa.animal_id
     WHERE aa.campaign_id=? ORDER BY aa.created_at DESC LIMIT 100
-  `).all(campaignId) as Array<{id:string;username:string;animalId:string;source:'follow'|'gift';createdAt:string;animalName:string;emoji:string}>;
+  `).all(campaignId) as Array<{id:string;username:string;animalId:string;source:'follow'|'gift';createdAt:string}>;
+  const animalById = new Map(ANIMALS.map(animal => [animal.id, animal]));
+  const followers = awardRows.map(row => ({ ...row, animalName: animalById.get(row.animalId as AnimalId)?.name ?? row.animalId, emoji: animalById.get(row.animalId as AnimalId)?.emoji ?? '🐾' }));
   const countsRows = db.prepare('SELECT animal_id AS id, COUNT(*) AS count FROM animal_awards WHERE campaign_id=? GROUP BY animal_id').all(campaignId) as Array<{id:string;count:number}>;
   const counts = new Map(countsRows.map(r => [r.id, r.count]));
   const top10 = ANIMALS.map(a => ({ ...a, count: counts.get(a.id) ?? 0 }))
@@ -117,7 +131,7 @@ function processFollow(platformUserId: string, username: string, eventId: string
   const result = tx();
   if (result.duplicate) return { ...result, state: snapshot() };
   if ('rewarded' in result && result.rewarded) {
-    emitState('follow', `@${result.username} recibió ${result.animal.name} por seguir la cuenta`);
+    emitState('follow', `@${result.username} recibió ${result.animal!.name} por seguir la cuenta`);
   } else if ('username' in result) {
     emitState('system', `@${result.username} ya recibió su recompensa de seguimiento`);
   }
@@ -138,7 +152,7 @@ function processGift(platformUserId: string, username: string, eventId: string, 
   return { ...result, state: snapshot() };
 }
 function processChoice(platformUserId: string, username: string, animalId: string, eventId: string) {
-  const animal = ANIMALS.find(a => a.id === animalId || a.name.toLowerCase() === animalId.toLowerCase());
+  const animal = findAnimal(animalId);
   if (!animal) return { error: 'Animal no válido. Consulta el catálogo /api/animals.' };
   const tx = db.transaction(() => {
     if (db.prepare('SELECT 1 FROM processed_events WHERE event_id=?').get(eventId)) return { duplicate: true };
@@ -154,11 +168,11 @@ function processChoice(platformUserId: string, username: string, animalId: strin
   const result = tx();
   if (result.duplicate) return { ...result, state: snapshot() };
   if (result.noPending) return { ...result, state: snapshot() };
-  if ('animal' in result) emitState('gift', `@${result.username} eligió ${result.animal.name}`);
+  if ('animal' in result) emitState('gift', `@${result.username} eligió ${result.animal!.name}`);
   return { ...result, state: snapshot() };
 }
 
-app.get('/health', async () => ({ ok:true, service:'animal-kingdom-server', mode:'demo-persistent', database:dbPath, timestamp:now() }));
+app.get('/health', async () => ({ ok:true, service:'animal-kingdom-server', mode:'demo-persistent+tiktok-adapter', database:dbPath, timestamp:now() }));
 app.get('/api/state', async () => snapshot());
 app.get('/api/animals', async () => ANIMALS);
 
@@ -179,11 +193,17 @@ const chatSchema = z.object({ username:z.string().min(1).max(64).default('fan_de
 app.post('/demo/chat', async (request,reply) => {
   const p=chatSchema.safeParse(request.body ?? {});
   if(!p.success) return reply.code(400).send({error:p.error.flatten()});
-  const match=p.data.message.trim().match(/^!animal\s+([a-záéíóúñ]+)$/i);
-  if(!match) return reply.code(400).send({error:'Usa el formato !animal panda'});
+  const message = p.data.message.trim();
+  if (/^!animales\s*$/i.test(message)) {
+    return { command: 'animales', reply: getAnimalListReply(), animals: ANIMALS };
+  }
+  const match=message.match(/^!animal\s+(.+)$/i);
+  if(!match) return reply.code(400).send({error:'Usa !animal leon o !animales para ver el catálogo.'});
   const userId=p.data.userId ?? `demo:${p.data.username.toLowerCase()}`;
   const result=processChoice(userId,p.data.username,match[1]!,p.data.eventId ?? randomUUID());
   if ('error' in result) return reply.code(400).send(result);
+  if ('noPending' in result && result.noPending) return { ...result, reply: 'No tienes elecciones pendientes. Envía una rosa antes de elegir un animal.' };
+  if ('animal' in result) return { ...result, reply: `¡@${p.data.username} ahora es parte del reino como ${result.animal!.emoji} ${result.animal!.name}!` };
   return result;
 });
 app.post('/demo/reset', async () => {
@@ -198,9 +218,186 @@ app.post('/demo/reset', async () => {
   emitState('system','Demo reiniciada; la campaña vuelve a estar vacía');
   return { ok:true, state:snapshot() };
 });
+const tiktokConnectSchema = z.object({ username: z.string().min(1).max(64) });
+app.get('/api/tiktok/status', async () => tiktokStatus);
+
+app.post('/api/tiktok/connect', async (request, reply) => {
+  const parsed = tiktokConnectSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    return reply.code(400).send({
+      error: 'Indica el usuario de TikTok sin @.',
+    });
+  }
+
+  const username = parsed.data.username.trim().replace(/^@/, '');
+  if (!username) {
+    return reply.code(400).send({
+      error: 'El usuario de TikTok no puede estar vacío.',
+    });
+  }
+
+  if (tiktokConnection) {
+    tiktokConnection.disconnect();
+    tiktokConnection = null;
+  }
+
+  setTikTokStatus('connecting', `Conectando con @${username}…`, username);
+
+  const connection = new TikTokLive(username);
+  connection.on('unknown', (data) => {
+  console.log('[TIKTOK UNKNOWN]', {
+      method: data.method,
+      msgId: data.msgId,
+      isHistory: data.isHistory,
+      payloadLength: data.payload?.length,
+    });
+  });
+  tiktokConnection = connection;
+
+  connection.on('error', (error) => {
+    if (tiktokConnection !== connection) return;
+
+    const message = error instanceof Error ? error.message : String(error);
+    setTikTokStatus('error', message.slice(0, 240), username);
+  });
+
+  connection.on('disconnected', ({ reason }) => {
+    if (tiktokConnection === connection) {
+      setTikTokStatus(
+        'disconnected',
+        `Desconectado de @${username}: ${reason}`,
+        username,
+      );
+    }
+  });
+
+  connection.on('chat', (data) => {
+    
+    if (data.isHistory) return;
+
+    const platformUserId = String(data.user.userId || data.user.uniqueId || 'unknown');
+    const displayName = data.user.nickname || data.user.uniqueId || 'espectador';
+    const comment = String(data.comment ?? '').trim();
+
+    console.log('[CHAT TIKTOK]', JSON.stringify({
+      user: data.user?.uniqueId,
+      comment: data.comment,
+      isHistory: data.isHistory,
+      msgId: data.msgId,
+    }));
+
+    if (!comment) return;
+
+    if (/^!animales\s*$/i.test(comment)) {
+      emitState('chat', `@${displayName} consultó el catálogo de animales`);
+      io.emit('tiktok:catalog-request', {
+        username: displayName,
+        reply: getAnimalListReply(),
+        animals: ANIMALS,
+      });
+      return;
+    }
+
+    const match = comment.match(/^!animal\s+(.+)$/i);
+    if (!match) return;
+
+    const id = eventKey(
+      data,
+      `tt-chat:${platformUserId}:${comment}:${Date.now()}`,
+    );
+
+    const result = processChoice(platformUserId, displayName, match[1]!, id);
+    console.log('[ANIMAL CHOICE RESULT]', result);
+
+    if ('error' in result) {
+      emitState('chat', `@${displayName}: animal no válido; escribió ${match[1]}`);
+    } else if ('noPending' in result && result.noPending) {
+      emitState('chat', `@${displayName} escribió !animal sin elecciones pendientes`);
+    }
+  });
+
+  connection.on('social', (data) => {
+    if (data.isHistory || data.action !== SOCIAL_ACTION.follow) return;
+
+    const platformUserId = String(data.user.userId || data.user.uniqueId || 'unknown');
+    const displayName = data.user.nickname || data.user.uniqueId || 'nuevo_seguidor';
+
+    processFollow(
+      platformUserId,
+      displayName,
+      eventKey(data, `tt-follow:${platformUserId}`),
+    );
+  });
+
+  connection.on('gift', (data) => {
+    if (data.isHistory) return;
+
+    const giftName = String(data.giftName ?? '');
+    if (!/^rose$/i.test(giftName) && String(data.giftId) !== '5655') return;
+
+    // Solo procesar la actualización final de una racha.
+    if (data.streakable && !data.repeatEnd) return;
+
+    const platformUserId = String(data.user.userId || data.user.uniqueId || 'unknown');
+    const displayName = data.user.nickname || data.user.uniqueId || 'fan_del_reino';
+    const count = Math.max(1, Math.min(100, Number(data.repeatCount) || 1));
+
+    const base = eventKey(
+      data,
+      `tt-gift:${platformUserId}:${data.giftId}:${Date.now()}`,
+    );
+
+    for (let i = 0; i < count; i++) {
+      processGift(platformUserId, displayName, `${base}:rose:${i}`, 'Rose');
+    }
+  });
+
+  connection.on('connected', () => {
+    if (tiktokConnection === connection) {
+      setTikTokStatus('connected', `Conectado al LIVE de @${username}`, username);
+    }
+  });
+
+  try {
+    const state = await connection.connect();
+
+    if (tiktokConnection === connection) {
+      setTikTokStatus('connected', `Conectado al LIVE de @${username}`, username);
+    }
+
+    return {
+      ok: true,
+      status: tiktokStatus,
+      roomId: String(state.roomId ?? connection.roomId ?? ''),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (tiktokConnection === connection) {
+      tiktokConnection = null;
+      setTikTokStatus('error', message.slice(0, 300), username);
+    }
+
+    return reply.code(502).send({
+      ok: false,
+      error: message.slice(0, 300),
+      status: tiktokStatus,
+    });
+  }
+});
+app.post('/api/tiktok/disconnect', async () => {
+  if (tiktokConnection) {
+    try { await tiktokConnection.disconnect(); } catch { /* best effort */ }
+    tiktokConnection = null;
+  }
+  setTikTokStatus('disconnected', 'Conexión detenida');
+  return { ok: true, status: tiktokStatus };
+});
+
 io.on('connection', socket => {
   socket.emit('kingdom:state',snapshot());
   socket.emit('kingdom:event',{kind:'system',message:'Conectado al reino de animales'});
+  socket.emit('tiktok:status', tiktokStatus);
 });
 const port=Number(process.env.PORT ?? 3001);
 await app.listen({port,host:'0.0.0.0'});
