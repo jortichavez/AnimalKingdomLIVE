@@ -8,3 +8,65 @@
 .how-to-title{display:flex;align-items:center;gap:10px;min-width:0}.how-to-rose{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:#49303e;font-size:22px;flex-shrink:0}.how-to-title div{display:flex;flex-direction:column;gap:4px}.how-to-title strong{font:600 13px Outfit,sans-serif;color:#f4f7fa}.how-to-title span:not(.how-to-rose){font-size:10px;color:var(--mint)}.how-to-step{display:flex;align-items:center;gap:7px;color:#dbe5ee;font-size:11px;line-height:1.4}.how-to-step b{display:grid;place-items:center;flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#294a3d;color:var(--mint);font-size:11px}.how-to-step code{padding:4px 6px;border-radius:6px;background:#0e171e;border:1px solid #34483f;color:#b8f1d2;font:600 11px ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap}.how-to-arrow{color:#8cc9aa;font-size:19px}.how-to-note{grid-column:2/-1;color:#8fa49b;font-size:9px;margin-top:-5px}
 @media(max-width:850px){.how-to-play{grid-template-columns:1fr auto 1.2fr;gap:9px}.how-to-title{grid-column:1/-1}.how-to-arrow{display:none}.how-to-note{grid-column:1/-1;margin-top:0}}
 @media(max-width:520px){.how-to-play{padding:11px;gap:8px}.how-to-title strong{font-size:12px}.how-to-step{font-size:10px}.how-to-step code{font-size:10px}.how-to-note{font-size:9px}}
+
+
+
+/* v0.8: three-column TikTok LIVE overlay: ranking, completed activity, instructions/catalog. */
+.kingdom-overlay{box-sizing:border-box;width:100%;max-width:1100px;margin:0 auto;padding:10px;color:#f1f5f9;font-family:'DM Sans',sans-serif;background:linear-gradient(145deg,rgba(14,23,32,.96),rgba(9,16,24,.96));border:1px solid #34483f;border-radius:14px;box-shadow:0 8px 30px #0005;overflow:hidden}
+.kingdom-overlay *{box-sizing:border-box}
+.overlay-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px 9px;border-bottom:1px solid #ffffff18}
+.overlay-brand{display:flex;align-items:center;gap:8px;min-width:0}.overlay-brand-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:#29483d;font-size:18px;flex-shrink:0}.overlay-brand strong{display:block;font:800 12px Outfit,sans-serif;letter-spacing:.55px;white-space:nowrap}.overlay-brand em{font-style:normal;color:#9de4c2}.overlay-brand small{display:block;margin-top:2px;color:#a7b6c5;font-size:9px}
+.overlay-status{display:flex;align-items:center;gap:5px;flex-shrink:0;font-size:8px;font-weight:800;letter-spacing:.4px;color:#d4bd89}.overlay-status i{width:6px;height:6px;border-radius:50%;background:#d4bd89}.overlay-status.online{color:#9de4c2}.overlay-status.online i{background:#9de4c2;box-shadow:0 0 8px #9de4c2}
+.overlay-columns{display:grid;grid-template-columns:minmax(180px,.78fr) minmax(260px,1.12fr) minmax(280px,1.15fr);gap:8px;padding-top:8px;align-items:stretch}
+.overlay-panel{min-width:0;padding:9px;border:1px solid #ffffff12;border-radius:10px;background:#ffffff05}
+.overlay-section-title{display:flex;flex-direction:column;gap:2px;margin-bottom:7px}.overlay-section-title span{font-size:10px;font-weight:900;letter-spacing:.55px}.overlay-section-title small{font-size:8px;color:#91a1b4}
+.overlay-top-list{display:flex;flex-direction:column;gap:3px}.overlay-top-row{display:grid;grid-template-columns:16px 22px minmax(0,1fr) 22px;align-items:center;gap:5px;padding:4px;min-height:25px;border-radius:6px;background:#ffffff07}.overlay-rank{font-size:9px;color:#91a1b4;text-align:center;font-weight:900}.overlay-rank-1{color:#f1cf7b}.overlay-rank-2{color:#d7e0ea}.overlay-rank-3{color:#d9a57e}.overlay-animal-emoji{font-size:16px;text-align:center}.overlay-animal-name{font-size:10px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.overlay-top-row>strong{font-size:10px;color:#a8edc9;text-align:right}
+.overlay-activity-list{display:flex;flex-direction:column;gap:5px}.overlay-activity-row{display:flex;align-items:center;gap:7px;min-width:0;padding:6px;border-radius:7px;background:#ffffff07}.overlay-activity-icon{display:grid;place-items:center;width:26px;height:26px;flex-shrink:0;border-radius:7px;background:#263b34;font-size:14px}.overlay-activity-icon.gift{background:#432e3a}.overlay-activity-copy{display:flex;flex-direction:column;gap:2px;min-width:0}.overlay-activity-copy strong{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.overlay-activity-copy small{font-size:8px;line-height:1.35;color:#aab7c5;overflow-wrap:anywhere}
+.overlay-instructions{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}.overlay-instruction{display:flex;align-items:flex-start;gap:7px}.overlay-instruction>b{display:grid;place-items:center;width:19px;height:19px;flex-shrink:0;border-radius:6px;background:#2b4b3d;color:#b7f1d1;font-size:10px}.overlay-instruction>span{display:flex;flex-direction:column;gap:2px;min-width:0}.overlay-instruction strong{font-size:9px}.overlay-instruction small{font-size:8px;line-height:1.35;color:#aab7c5}
+.overlay-catalog-title{display:flex;flex-direction:column;gap:2px;padding-top:8px;border-top:1px solid #ffffff16;font-size:9px;font-weight:900;letter-spacing:.4px}.overlay-catalog-title small{font-size:8px;font-weight:400;letter-spacing:0;color:#91a1b4}.overlay-catalog{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;margin-top:7px}.overlay-catalog-item{display:flex;align-items:center;gap:5px;min-width:0;padding:4px 5px;border-radius:5px;background:#ffffff07;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.overlay-catalog-item i{font-style:normal;font-size:13px}
+.overlay-empty{margin:0;padding:12px 5px;text-align:center;color:#9aa9b9;font-size:9px;line-height:1.4}.overlay-footer{margin-top:8px;padding-top:7px;border-top:1px solid #ffffff15;text-align:center;color:#a7d9bd;font-size:8px}
+@media(max-width:760px){.kingdom-overlay{padding:7px;border-radius:10px}.overlay-columns{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:6px}.overlay-ranking{grid-column:1}.overlay-activity{grid-column:2}.overlay-guide{grid-column:1 / -1}.overlay-guide .overlay-catalog{grid-template-columns:repeat(4,minmax(0,1fr))}.overlay-guide .overlay-instructions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.overlay-instruction{gap:4px}.overlay-instruction>b{width:17px;height:17px}.overlay-brand strong{font-size:10px}}
+@media(max-width:460px){.overlay-columns{grid-template-columns:1fr}.overlay-ranking,.overlay-activity,.overlay-guide{grid-column:1}.overlay-ranking .overlay-top-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px}.overlay-top-row{min-height:23px}.overlay-guide .overlay-catalog{grid-template-columns:repeat(3,minmax(0,1fr))}.overlay-guide .overlay-instructions{display:flex}.overlay-activity-list{display:grid;grid-template-columns:1fr 1fr;gap:4px}.overlay-activity-row{padding:4px}.overlay-activity-copy small{font-size:7px}.overlay-brand small{font-size:8px}.overlay-section-title span{font-size:9px}}
+
+
+/* v0.9: two-column upper area + full-width horizontal instructions/catalog */
+.overlay-columns{grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);grid-template-areas:"ranking activity" "guide guide";gap:8px;align-items:start}
+.overlay-ranking{grid-area:ranking}
+.overlay-activity{grid-area:activity}
+.overlay-guide{grid-area:guide}
+.overlay-guide .overlay-instructions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:9px}
+.overlay-guide .overlay-instruction{align-items:center;gap:7px;min-width:0}
+.overlay-guide .overlay-instruction>span{min-width:0}
+.overlay-guide .overlay-instruction strong{font-size:10px}
+.overlay-guide .overlay-instruction small{font-size:9px}
+.overlay-guide .overlay-catalog{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.overlay-guide .overlay-catalog-item{flex:0 0 auto;max-width:calc(20% - 5px);font-size:9px;padding:4px 7px}
+.overlay-guide .overlay-catalog-title{flex-direction:row;align-items:center;justify-content:space-between;gap:8px}
+.overlay-guide .overlay-catalog-title small{font-size:8px}
+.overlay-top-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.overlay-top-row{min-height:24px}
+.overlay-activity-list{display:flex;flex-direction:column;gap:4px}
+.overlay-activity-row{padding:5px}
+.overlay-activity-copy small{font-size:9px}
+.overlay-footer{font-size:9px}
+@media(max-width:760px){
+ .overlay-columns{grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);grid-template-areas:"ranking activity" "guide guide";gap:6px}
+ .overlay-guide .overlay-instructions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+ .overlay-guide .overlay-catalog{display:flex;flex-wrap:wrap}
+ .overlay-guide .overlay-catalog-item{max-width:calc(25% - 5px);font-size:8px;padding:3px 5px}
+ .overlay-top-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .overlay-brand strong{font-size:10px}
+}
+@media(max-width:460px){
+ .overlay-columns{grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);grid-template-areas:"ranking activity" "guide guide"}
+ .overlay-ranking .overlay-top-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ .overlay-activity-list{display:flex;flex-direction:column}
+ .overlay-guide .overlay-instructions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+ .overlay-guide .overlay-catalog{display:flex;flex-wrap:wrap}
+ .overlay-guide .overlay-catalog-item{max-width:calc(33.333% - 5px);font-size:7px;gap:3px}
+ .overlay-guide .overlay-instruction>b{width:16px;height:16px}
+ .overlay-guide .overlay-instruction strong{font-size:8px}
+ .overlay-guide .overlay-instruction small{font-size:7px}
+ .overlay-activity-copy small{font-size:7px}
+ .overlay-section-title span{font-size:9px}
+}

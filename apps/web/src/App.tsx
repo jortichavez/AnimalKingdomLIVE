@@ -43,6 +43,17 @@ export default function App() {
   }, []);
   const maxCount = Math.max(1, ...snapshot.top10.map(a => a.count));
   const groups = useMemo(() => SPECIES.map(a => ({ ...a, count: snapshot.top10.find(t => t.id === a.id)?.count ?? 0 })).filter(a => a.count > 0).sort((a,b) => b.count-a.count), [snapshot.top10]);
+  const overlayActivity = useMemo(() => snapshot.followers
+    .map(f => ({
+      key: `award-${f.id}`,
+      username: f.username,
+      animalName: f.animalName,
+      emoji: f.emoji,
+      kind: f.source,
+      createdAt: f.createdAt
+    }))
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    .slice(0, 8), [snapshot.followers]);
   async function connectTikTok() {
     setTiktokBusy(true);
     try {
@@ -84,6 +95,39 @@ export default function App() {
       setEvents(old => [{kind:'error',message:error instanceof Error ? error.message : 'No se pudo procesar el comentario'}, ...old].slice(0,5));
     } finally { setBusy(false); }
   }
+  if (overlayMode) return <main className="kingdom-overlay">
+    <header className="overlay-header">
+      <div className="overlay-brand"><span className="overlay-brand-icon">🐾</span><div><strong>ANIMAL KINGDOM <em>LIVE</em></strong><small>Síguenos para un animal · Rosa = una elección</small></div></div>
+      <span className={`overlay-status ${connected ? 'online' : ''}`}><i />{connected ? 'EN VIVO' : 'CONECTANDO'}</span>
+    </header>
+    <div className="overlay-columns">
+      <section className="overlay-panel overlay-ranking">
+        <div className="overlay-section-title"><span>🏆 TOP 10</span><small>Animales más elegidos</small></div>
+        {snapshot.top10.length ? <div className="overlay-top-list">{snapshot.top10.slice(0, 10).map((a, i) => <div className="overlay-top-row" key={a.id}>
+          <span className={`overlay-rank overlay-rank-${i + 1}`}>{i + 1}</span><span className="overlay-animal-emoji">{a.emoji}</span><span className="overlay-animal-name">{a.name}</span><strong>{a.count}</strong>
+        </div>)}</div> : <p className="overlay-empty">El Top 10 aparecerá con las primeras elecciones.</p>}
+      </section>
+      <section className="overlay-panel overlay-activity">
+        <div className="overlay-section-title"><span>✨ ACTIVIDAD RECIENTE</span><small>Follows y rosas canjeadas</small></div>
+        {overlayActivity.length ? <div className="overlay-activity-list">{overlayActivity.map(item => <div className="overlay-activity-row" key={item.key}>
+          <span className={`overlay-activity-icon ${item.kind === 'gift' ? 'gift' : ''}`}>{item.kind === 'gift' ? '🌹' : '🐾'}</span>
+          <div className="overlay-activity-copy"><strong>@{item.username}</strong><small>{item.kind === 'gift' ? `Envió una rosa y eligió ${item.emoji} ${item.animalName}` : `Empezó a seguir · recibió ${item.emoji} ${item.animalName}`}</small></div>
+        </div>)}</div> : <p className="overlay-empty">Aquí aparecerán los nuevos seguidores y las elecciones completadas.</p>}
+      </section>
+      <section className="overlay-panel overlay-guide">
+        <div className="overlay-section-title"><span>📣 ¿CÓMO PARTICIPAR?</span></div>
+        <div className="overlay-instructions">
+          <div className="overlay-instruction"><b>1</b><span><strong>Dale FOLLOW</strong><small>Recibirás un animal al azar.</small></span></div>
+          <div className="overlay-instruction"><b>2</b><span><strong>Envía una 🌹 rosa</strong><small>Después escribe el nombre del animal en el chat.</small></span></div>
+          <div className="overlay-instruction"><b>3</b><span><strong>¡Elige tu animal!</strong><small>Cada rosa permite una elección. Varias rosas permiten elegir varias veces.</small></span></div>
+        </div>
+        <div className="overlay-catalog-title">ANIMALES DISPONIBLES <small>Escribe uno de estos nombres</small></div>
+        <div className="overlay-catalog">{SPECIES.map(a => <span className="overlay-catalog-item" key={a.id}><i>{a.emoji}</i>{a.name}</span>)}</div>
+      </section>
+    </div>
+    <footer className="overlay-footer">🌹 Envía una rosa y escribe el nombre del animal · Sin comandos ni signos de exclamación</footer>
+  </main>;
+
   return <main className="app-shell">
     <header className="topbar"><div className="brand-mark"><PawPrint size={25}/></div><div className="brand-copy"><h1>ANIMAL KINGDOM <span>LIVE</span></h1><p>Tu comunidad se convierte en un reino</p></div><div className={`live-pill ${connected ? 'online' : ''}`}><span className="pulse"/>{connected ? 'SISTEMA ONLINE' : 'CONECTANDO'}</div></header>
     <section className="hero"><div><div className="eyebrow"><Sparkles size={14}/> CADA FOLLOW CREA UNA HISTORIA</div><h2>Un reino que <em>crece contigo.</em></h2><p>Entra, recibe tu animal y encuentra tu lugar en la manada.</p></div><div className="hero-orbit"><span className="orb orb-one">🦊</span><span className="orb orb-two">🐼</span><span className="orb orb-three">🦁</span><span className="orb orb-four">🐸</span><span className="orb-center">🐾</span></div></section>
