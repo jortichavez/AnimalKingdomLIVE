@@ -1,4 +1,4 @@
-# Animal Kingdom LIVE — MVP v0.6
+# Animal Kingdom LIVE — MVP v0.9
 
 Versión de desarrollo con SQLite, panel web, overlay para OBS y conexión experimental a TikTok LIVE. La integración usa una biblioteca comunitaria no oficial; puede dejar de funcionar si TikTok cambia sus servicios internos.
 
