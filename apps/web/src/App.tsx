@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { io } from 'socket.io-client';
 import { Heart, PawPrint, Radio, Sparkles, Trophy, Users, Wifi, WifiOff } from 'lucide-react';
 
-type Follower = { id: string; username: string; animalId: string; animalName: string; emoji: string; source: 'follow' | 'gift'; createdAt: string };
+type Follower = { id: string; username: string; animalId: string; animalName: string; emoji: string; source: 'follow' | 'gift' | 'chat'; createdAt: string };
 type Animal = { id: string; name: string; emoji: string; rarity: string; count: number };
 type Snapshot = { followers: Follower[]; top10: Animal[]; totalFollowers: number; totalGifts: number; totalAnimals: number; pendingChoices: Array<{id:string;username:string;giftName:string;createdAt:string}> };
 type EventMessage = { kind: string; message: string };
 type TikTokStatus = { status: 'disconnected'|'connecting'|'connected'|'error'; username?: string; message: string };
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
-const overlayMode = new URLSearchParams(window.location.search).get('overlay') === '1';
+const overlayParams = new URLSearchParams(window.location.search);
+const overlayMode = overlayParams.get('overlay') === '1';
+const overlayPart = overlayParams.get('part') === 'guide' ? 'guide' : overlayParams.get('part') === 'top' ? 'top' : 'all';
 const SPECIES = [
   { id: 'fox', name: 'Zorro', emoji: '🦊' }, { id: 'panda', name: 'Panda', emoji: '🐼' }, { id: 'lion', name: 'León', emoji: '🦁' },
   { id: 'wolf', name: 'Lobo', emoji: '🐺' }, { id: 'frog', name: 'Rana', emoji: '🐸' }, { id: 'cat', name: 'Gato', emoji: '🐱' },
@@ -76,14 +78,6 @@ export default function App() {
     } catch { setTiktokStatus({ status: 'error', message: 'No se pudo detener la conexión' }); }
     finally { setTiktokBusy(false); }
   }
-  async function send(kind: 'follow' | 'gift') {
-    setBusy(true);
-    try {
-      const response = await fetch(`${API}/demo/${kind}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: username.trim() || (kind === 'follow' ? 'nuevo_seguidor' : 'fan_del_reino'), ...(kind === 'gift' ? { giftName: 'Rose' } : {}) }) });
-      if (!response.ok) throw new Error('El servidor rechazó el evento');
-    } catch (error) { setEvents(old => [{ kind: 'error', message: error instanceof Error ? error.message : 'No se pudo enviar el evento' }, ...old].slice(0,5)); }
-    finally { setBusy(false); }
-  }
   async function sendCommand() {
     setBusy(true);
     try {
@@ -95,56 +89,56 @@ export default function App() {
       setEvents(old => [{kind:'error',message:error instanceof Error ? error.message : 'No se pudo procesar el comentario'}, ...old].slice(0,5));
     } finally { setBusy(false); }
   }
-  if (overlayMode) return <main className="kingdom-overlay">
+  if (overlayMode) return <main className={`kingdom-overlay overlay-part-${overlayPart}`}>
     <header className="overlay-header">
-      <div className="overlay-brand"><span className="overlay-brand-icon">🐾</span><div><strong>ANIMAL KINGDOM <em>LIVE</em></strong><small>Síguenos para un animal · Rosa = una elección</small></div></div>
+      <div className="overlay-brand"><span className="overlay-brand-icon">🐾</span><div><strong>ANIMAL KINGDOM <em>LIVE</em></strong><small>¡Un reino que crece contigo!</small></div></div>
       <span className={`overlay-status ${connected ? 'online' : ''}`}><i />{connected ? 'EN VIVO' : 'CONECTANDO'}</span>
     </header>
-    <div className="overlay-columns">
-      <section className="overlay-panel overlay-ranking">
-        <div className="overlay-section-title"><span>🏆 TOP 10</span><small>Animales más elegidos</small></div>
-        {snapshot.top10.length ? <div className="overlay-top-list">{snapshot.top10.slice(0, 10).map((a, i) => <div className="overlay-top-row" key={a.id}>
-          <span className={`overlay-rank overlay-rank-${i + 1}`}>{i + 1}</span><span className="overlay-animal-emoji">{a.emoji}</span><span className="overlay-animal-name">{a.name}</span><strong>{a.count}</strong>
-        </div>)}</div> : <p className="overlay-empty">El Top 10 aparecerá con las primeras elecciones.</p>}
-      </section>
-      <section className="overlay-panel overlay-activity">
-        <div className="overlay-section-title"><span>✨ ACTIVIDAD RECIENTE</span><small>Follows y rosas canjeadas</small></div>
-        {overlayActivity.length ? <div className="overlay-activity-list">{overlayActivity.map(item => <div className="overlay-activity-row" key={item.key}>
-          <span className={`overlay-activity-icon ${item.kind === 'gift' ? 'gift' : ''}`}>{item.kind === 'gift' ? '🌹' : '🐾'}</span>
-          <div className="overlay-activity-copy"><strong>@{item.username}</strong><small>{item.kind === 'gift' ? `Envió una rosa y eligió ${item.emoji} ${item.animalName}` : `Empezó a seguir · recibió ${item.emoji} ${item.animalName}`}</small></div>
-        </div>)}</div> : <p className="overlay-empty">Aquí aparecerán los nuevos seguidores y las elecciones completadas.</p>}
-      </section>
-      <section className="overlay-panel overlay-guide">
-        <div className="overlay-section-title"><span>📣 ¿CÓMO PARTICIPAR?</span></div>
-        <div className="overlay-instructions">
-          <div className="overlay-instruction"><b>1</b><span><strong>Dale FOLLOW</strong><small>Recibirás un animal al azar.</small></span></div>
-          <div className="overlay-instruction"><b>2</b><span><strong>Envía una 🌹 rosa</strong><small>Después escribe el nombre del animal en el chat.</small></span></div>
-          <div className="overlay-instruction"><b>3</b><span><strong>¡Elige tu animal!</strong><small>Cada rosa permite una elección. Varias rosas permiten elegir varias veces.</small></span></div>
-        </div>
-        <div className="overlay-catalog-title">ANIMALES DISPONIBLES <small>Escribe uno de estos nombres</small></div>
-        <div className="overlay-catalog">{SPECIES.map(a => <span className="overlay-catalog-item" key={a.id}><i>{a.emoji}</i>{a.name}</span>)}</div>
-      </section>
-    </div>
-    <footer className="overlay-footer">🌹 Envía una rosa y escribe el nombre del animal · Sin comandos ni signos de exclamación</footer>
+    {(overlayPart === 'all' || overlayPart === 'guide') && <section className="overlay-panel overlay-guide overlay-guide-source">
+      <div className="overlay-section-title"><span>🌿 ¿CÓMO PARTICIPAR?</span><small>¡Solo necesitas escribir en el chat!</small></div>
+      <div className="overlay-instructions">
+        <div className="overlay-instruction"><b>1</b><span><strong>ELIGE TU FAVORITO</strong><small>Busca uno de los 20 animales disponibles.</small></span></div>
+        <div className="overlay-instruction"><b>2</b><span><strong>ESCRIBE SU NOMBRE</strong><small>Comenta solo el nombre: panda, león, tigre…</small></span></div>
+        <div className="overlay-instruction"><b>3</b><span><strong>¡VOTA Y CAMBIA EL TOP 3!</strong><small>Cada comentario válido suma un voto y aparece en actividad.</small></span></div>
+      </div>
+    </section>}
+    {(overlayPart === 'all' || overlayPart === 'top') && <section className="overlay-panel overlay-ranking overlay-ranking-featured">
+      <div className="overlay-section-title"><span>🏆 TOP 3 DEL REINO</span><small>Los animales más elegidos por la comunidad</small></div>
+      {snapshot.top10.length ? <div className="overlay-top-list">{snapshot.top10.slice(0, 3).map((a, i) => <div className={`overlay-top-row featured-rank featured-rank-${i + 1}`} key={a.id}>
+        <span className={`overlay-rank overlay-rank-${i + 1}`}>{i + 1}</span><span className="overlay-animal-emoji">{a.emoji}</span><span className="overlay-animal-name">{a.name}</span><strong>{a.count}</strong>
+      </div>)}</div> : <p className="overlay-empty">¡El Top 3 se llenará con las primeras elecciones!</p>}
+    </section>}
+    {(overlayPart === 'all' || overlayPart === 'top') && <section className="overlay-panel overlay-activity">
+      <div className="overlay-section-title"><span>✨ ACTIVIDAD RECIENTE</span><small>¡Cada comentario válido aparece aquí en tiempo real!</small></div>
+      {overlayActivity.length ? <div className="overlay-activity-list">{overlayActivity.slice(0, 4).map(item => <div className="overlay-activity-row" key={item.key}>
+        <span className={`overlay-activity-icon ${item.kind === 'chat' ? 'chat' : item.kind === 'gift' ? 'gift' : ''}`}>{item.kind === 'chat' ? item.emoji : '🐾'}</span>
+        <div className="overlay-activity-copy"><strong>@{item.username}</strong><small>{item.kind === 'chat' ? `Votó por ${item.emoji} ${item.animalName}` : `Eligió ${item.emoji} ${item.animalName}`}</small></div>
+      </div>)}</div> : <p className="overlay-empty">¡Sé el primero en votar! Escribe el nombre de tu animal favorito.</p>}
+    </section>}
+    {(overlayPart === 'all' || overlayPart === 'guide') && <section className="overlay-panel overlay-catalog-panel">
+      <div className="overlay-catalog-title">🐾 ANIMALES DISPONIBLES <small>Comenta el nombre de tu favorito para darle un voto</small></div>
+      <div className="overlay-catalog">{SPECIES.map(a => <span className="overlay-catalog-item" key={a.id}><i>{a.emoji}</i><b>{a.name}</b></span>)}</div>
+      <footer className="overlay-footer">💬 UN COMENTARIO = UN VOTO · ¡HAZ SUBIR A TU FAVORITO!</footer>
+    </section>}
   </main>;
 
   return <main className="app-shell">
     <header className="topbar"><div className="brand-mark"><PawPrint size={25}/></div><div className="brand-copy"><h1>ANIMAL KINGDOM <span>LIVE</span></h1><p>Tu comunidad se convierte en un reino</p></div><div className={`live-pill ${connected ? 'online' : ''}`}><span className="pulse"/>{connected ? 'SISTEMA ONLINE' : 'CONECTANDO'}</div></header>
-    <section className="hero"><div><div className="eyebrow"><Sparkles size={14}/> CADA FOLLOW CREA UNA HISTORIA</div><h2>Un reino que <em>crece contigo.</em></h2><p>Entra, recibe tu animal y encuentra tu lugar en la manada.</p></div><div className="hero-orbit"><span className="orb orb-one">🦊</span><span className="orb orb-two">🐼</span><span className="orb orb-three">🦁</span><span className="orb orb-four">🐸</span><span className="orb-center">🐾</span></div></section>
+    <section className="hero"><div><div className="eyebrow"><Sparkles size={14}/> CADA COMENTARIO CUENTA</div><h2>Un reino que <em>crece contigo.</em></h2><p>Comenta tu animal favorito y ayuda a cambiar el Top 3.</p></div><div className="hero-orbit"><span className="orb orb-one">🦊</span><span className="orb orb-two">🐼</span><span className="orb orb-three">🦁</span><span className="orb orb-four">🐸</span><span className="orb-center">🐾</span></div></section>
     <section className="how-to-play" aria-label="Cómo participar">
-      <div className="how-to-title"><span className="how-to-rose">🌹</span><div><strong>¿Quieres elegir tu animal?</strong><span>Una rosa = una elección</span></div></div>
-      <div className="how-to-step"><b>1</b><span>Envía una rosa</span></div>
+      <div className="how-to-title"><span className="how-to-rose">💬</span><div><strong>¿Quieres votar por tu animal?</strong><span>Un comentario válido = un voto</span></div></div>
+      <div className="how-to-step"><b>1</b><span>Elige tu favorito</span></div>
       <div className="how-to-arrow">→</div>
-      <div className="how-to-step"><b>2</b><span>Escribe el nombre del animal, por ejemplo <code>panda</code></span></div>
-      <div className="how-to-note">No necesitas tildes: leon también funciona. Cada rosa te da una elección; si envías 3 rosas, puedes elegir 3 animales.</div>
+      <div className="how-to-step"><b>2</b><span>Escribe su nombre, por ejemplo <code>panda</code></span></div>
+      <div className="how-to-note">No necesitas tildes: leon también funciona. ¡Cada comentario válido suma al ranking!</div>
     </section>
-    <section className="stats-grid"><Stat icon={<Users size={17}/>} label="SEGUIDORES" value={snapshot.totalFollowers}/><Stat icon={<PawPrint size={17}/>} label="ANIMALES" value={snapshot.totalAnimals}/><Stat icon={<Heart size={17}/>} label="REGALOS" value={snapshot.totalGifts}/></section>
+    <section className="stats-grid"><Stat icon={<Users size={17}/>} label="VOTOS" value={snapshot.totalAnimals}/><Stat icon={<PawPrint size={17}/>} label="ESPECIES VOTADAS" value={groups.length}/><Stat icon={<Heart size={17}/>} label="COMENTARIOS VÁLIDOS" value={snapshot.totalAnimals}/></section>
     <section className="content-grid"><div className="panel kingdom-panel"><div className="section-heading"><div><span className="section-kicker">LA COMUNIDAD</span><h3>Habitantes del reino</h3></div><span className="count-tag">{groups.length} especies</span></div><div className="animal-groups">{groups.length ? groups.map((a,i)=><div className={`animal-card animal-card-${i%4}`} key={a.id}><div className="animal-glow"/><span className="animal-emoji">{a.emoji}</span><span className="animal-name">{a.name}</span><strong>×{a.count}</strong></div>) : <div className="empty-kingdom"><div className="empty-paw">🐾</div><strong>Tu reino está esperando</strong><span>Los nuevos seguidores aparecerán aquí.</span></div>}</div><div className="event-feed"><div className="feed-heading"><Radio size={14}/> ACTIVIDAD RECIENTE</div>{events.slice(0,3).map((e,i)=><div className="event-line" key={`${e.message}-${i}`}><span className={`event-dot ${e.kind}`}/><span>{e.message}</span></div>)}</div></div>
     <aside className="panel leaderboard-panel"><div className="section-heading"><div><span className="section-kicker">LA COMPETENCIA</span><h3><Trophy size={19}/> Top 10 animales</h3></div><span className="live-mini"><span/> LIVE</span></div><div className="leader-list">{snapshot.top10.map((a,i)=><div className="leader-row" key={a.id}><span className={`rank rank-${i+1}`}>{String(i+1).padStart(2,'0')}</span><span className="leader-emoji">{a.emoji}</span><div className="leader-main"><div className="leader-label"><span>{a.name}</span><b>{a.count}</b></div><div className="progress-track"><div className="progress-value" style={{width:`${a.count/maxCount*100}%`}}/></div></div></div>)}{snapshot.top10.length===0 && <div className="leader-empty">El ranking se llenará con cada nuevo animal.</div>}</div><div className="leader-footer"><Sparkles size={14}/> Cada animal cuenta para su especie</div></aside></section>
-    <section className="panel recent-panel"><div className="section-heading"><div><span className="section-kicker">NUEVAS INCORPORACIONES</span><h3>Últimos habitantes</h3></div><span className="count-tag">EN VIVO <span className="tiny-dot"/></span></div><div className="recent-list">{snapshot.followers.slice(0,8).map(f=><div className="recent-item" key={f.id}><span className="recent-animal">{f.emoji}</span><div className="recent-person"><strong>@{f.username}</strong><span>{f.source==='gift'?'Eligió':'Recibió'} un {f.animalName}</span></div><span className={`source-tag ${f.source}`}>{f.source==='gift'?'ROSA':'FOLLOW'}</span></div>)}{snapshot.followers.length===0 && <div className="recent-empty">Los seguidores que entren al directo aparecerán aquí.</div>}</div></section>
+    <section className="panel recent-panel"><div className="section-heading"><div><span className="section-kicker">EL CHAT MUEVE EL REINO</span><h3>Últimos votos</h3></div><span className="count-tag">EN VIVO <span className="tiny-dot"/></span></div><div className="recent-list">{snapshot.followers.slice(0,8).map(f=><div className="recent-item" key={f.id}><span className="recent-animal">{f.emoji}</span><div className="recent-person"><strong>@{f.username}</strong><span>{f.source==='chat'?'Votó por':'Eligió'} {f.emoji} {f.animalName}</span></div><span className={`source-tag ${f.source}`}>{f.source==='chat'?'VOTO':f.source==='gift'?'ROSA':'FOLLOW'}</span></div>)}{snapshot.followers.length===0 && <div className="recent-empty">Los comentarios con nombres de animales aparecerán aquí.</div>}</div></section>
     {!overlayMode && <section className="panel demo-panel"><div className="demo-title"><div className="demo-icon"><Radio size={18}/></div><div><span className="section-kicker">CONEXIÓN REAL</span><h3>Conectar TikTok LIVE</h3><p>Escribe el usuario que está transmitiendo (sin @). Conecta cuando el LIVE ya esté iniciado.</p></div></div><div className="demo-controls"><label>Usuario de TikTok<input value={tiktokUsername} onChange={e=>setTiktokUsername(e.target.value)} placeholder="ej. tu_usuario" maxLength={64}/></label><div className="event-line"><span className={`event-dot ${tiktokStatus.status === 'connected' ? 'success' : tiktokStatus.status === 'error' ? 'error' : 'system'}`}/><span><strong>{tiktokStatus.status.toUpperCase()}</strong> — {tiktokStatus.message}</span></div><button disabled={tiktokBusy || !tiktokUsername.trim() || tiktokStatus.status === 'connected'} className="primary-button" onClick={connectTikTok}><Wifi size={16}/> {tiktokBusy ? 'Conectando…' : 'Conectar con TikTok'}</button><button disabled={tiktokBusy || tiktokStatus.status === 'disconnected'} className="gift-button" onClick={disconnectTikTok}><WifiOff size={16}/> Desconectar</button><p>Conector comunitario no oficial. Esta versión recibe eventos; no publica respuestas automáticas en el chat.</p></div></section>}
-    {!overlayMode && <section className="panel demo-panel"><div className="demo-title"><div className="demo-icon"><Sparkles size={18}/></div><div><span className="section-kicker">MODO DE PRUEBA</span><h3>Prueba el reino</h3><p>Simula seguidores, rosas y comentarios. Los datos se guardan en SQLite; usa esto para ensayar sin un LIVE.</p></div></div><div className="demo-controls"><label>Nombre del espectador<input value={username} onChange={e=>setUsername(e.target.value)} placeholder="ej. luna23" maxLength={32}/></label><label>Animal que quieres elegir<input value={chatCommand} onChange={e=>setChatCommand(e.target.value)} placeholder="panda, leon, tigre..."/></label><button disabled={busy} className="primary-button" onClick={()=>send('follow')}><Users size={16}/> Simular seguidor</button><button disabled={busy} className="gift-button" onClick={()=>send('gift')}><Heart size={16}/> Simular rosa (crear pendiente)</button><button disabled={busy} className="primary-button" onClick={sendCommand}><PawPrint size={16}/> Enviar comentario</button></div></section>}
-    {!overlayMode && <section className="panel recent-panel"><div className="section-heading"><div><span className="section-kicker">REGALOS POR RESOLVER</span><h3>Elecciones pendientes</h3></div><span className="count-tag">{snapshot.pendingChoices.length} pendientes</span></div><div className="recent-list">{snapshot.pendingChoices.slice(0,8).map(p=><div className="recent-item" key={p.id}><span className="recent-animal">🌹</span><div className="recent-person"><strong>@{p.username}</strong><span>Puede escribir el nombre de cualquier especie válida</span></div><span className="source-tag gift">PENDIENTE</span></div>)}{snapshot.pendingChoices.length===0 && <div className="recent-empty">No hay elecciones pendientes.</div>}</div></section>}
+    {!overlayMode && <section className="panel demo-panel"><div className="demo-title"><div className="demo-icon"><Sparkles size={18}/></div><div><span className="section-kicker">MODO DE PRUEBA</span><h3>Prueba el reino</h3><p>Simula comentarios de animales. Cada comentario válido suma un voto al ranking y aparece en actividad.</p></div></div><div className="demo-controls"><label>Nombre del espectador<input value={username} onChange={e=>setUsername(e.target.value)} placeholder="ej. luna23" maxLength={32}/></label><label>Animal que quieres elegir<input value={chatCommand} onChange={e=>setChatCommand(e.target.value)} placeholder="panda, leon, tigre..."/></label><button disabled={busy} className="primary-button" onClick={sendCommand}><PawPrint size={16}/> Enviar comentario</button></div></section>}
+    {!overlayMode && <section className="panel recent-panel"><div className="section-heading"><div><span className="section-kicker">DINÁMICA ACTUAL</span><h3>Vota por tu animal favorito</h3></div><span className="count-tag">Solo comentarios</span></div><div className="recent-list"><div className="recent-empty">No necesitas seguir ni enviar regalos. Escribe el nombre de un animal en el chat para sumar un voto.</div></div></section>}
     {!overlayMode && <footer><div className="footer-brand"><PawPrint size={16}/> ANIMAL KINGDOM LIVE</div><span><Wifi size={13}/> Tiempo real mediante Socket.IO</span><span className="footer-demo">{tiktokStatus.status === 'connected' ? <Wifi size={13}/> : <WifiOff size={13}/>} TikTok: {tiktokStatus.status}</span></footer>}
   </main>;
 }

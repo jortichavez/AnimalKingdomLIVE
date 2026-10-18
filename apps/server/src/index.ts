@@ -43,6 +43,11 @@ db.exec(`
     user_id TEXT NOT NULL REFERENCES users(id), gift_event_id TEXT NOT NULL UNIQUE,
     gift_name TEXT NOT NULL, created_at TEXT NOT NULL, consumed_at TEXT
   );
+  CREATE TABLE IF NOT EXISTS animal_votes (
+    id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id),
+    user_id TEXT NOT NULL REFERENCES users(id), animal_id TEXT NOT NULL,
+    event_id TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS processed_events (
     event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL, created_at TEXT NOT NULL
   );
@@ -68,7 +73,6 @@ const campaignId = 'default-campaign';
 db.prepare(`INSERT OR IGNORE INTO campaigns(id,name,active,created_at) VALUES(?,?,1,?)`)
   .run(campaignId, 'Campaña principal', now());
 
-type AwardRow = { id: string; username: string; animalId: string; animalName: string; emoji: string; source: 'follow'|'gift'; createdAt: string };
 function getOrCreateUser(platformUserId: string, username: string) {
   const cleanName = username.replace(/^@/, '').trim().slice(0, 32) || 'espectador';
   const existing = db.prepare('SELECT * FROM users WHERE platform_user_id = ?').get(platformUserId) as {id:string; username:string}|undefined;
@@ -90,27 +94,43 @@ function awardAnimal(userId: string, animalId: AnimalId, source: 'follow'|'gift'
 function randomAnimal() { return ANIMALS[Math.floor(Math.random() * ANIMALS.length)]!; }
 
 function snapshot() {
-  const awardRows = db.prepare(`
-    SELECT aa.id, u.username, aa.animal_id AS animalId, aa.source, aa.created_at AS createdAt
-    FROM animal_awards aa JOIN users u ON u.id=aa.user_id
-    WHERE aa.campaign_id=? ORDER BY aa.created_at DESC LIMIT 100
-  `).all(campaignId) as Array<{id:string;username:string;animalId:string;source:'follow'|'gift';createdAt:string}>;
+  // En esta dinámica solo cuentan los comentarios válidos del chat.
+  const voteRows = db.prepare(`
+    SELECT av.id, u.username, av.animal_id AS animalId, av.created_at AS createdAt
+    FROM animal_votes av JOIN users u ON u.id=av.user_id
+    WHERE av.campaign_id=? ORDER BY av.created_at DESC LIMIT 100
+  `).all(campaignId) as Array<{id:string;username:string;animalId:string;createdAt:string}>;
   const animalById = new Map(ANIMALS.map(animal => [animal.id, animal]));
-  const followers = awardRows.map(row => ({ ...row, animalName: animalById.get(row.animalId as AnimalId)?.name ?? row.animalId, emoji: animalById.get(row.animalId as AnimalId)?.emoji ?? '🐾' }));
-  const countsRows = db.prepare('SELECT animal_id AS id, COUNT(*) AS count FROM animal_awards WHERE campaign_id=? GROUP BY animal_id').all(campaignId) as Array<{id:string;count:number}>;
+  const followers = voteRows.map(row => {
+    const animal = animalById.get(row.animalId as AnimalId);
+    return { ...row, animalName: animal?.name ?? row.animalId, emoji: animal?.emoji ?? '🐾', source: 'chat' as const };
+  });
+  const countsRows = db.prepare('SELECT animal_id AS id, COUNT(*) AS count FROM animal_votes WHERE campaign_id=? GROUP BY animal_id').all(campaignId) as Array<{id:string;count:number}>;
   const counts = new Map(countsRows.map(r => [r.id, r.count]));
   const top10 = ANIMALS.map(a => ({ ...a, count: counts.get(a.id) ?? 0 }))
-    .sort((a,b) => b.count-a.count || a.name.localeCompare(b.name)).slice(0,10);
-  const totalFollowers = (db.prepare("SELECT COUNT(*) c FROM animal_awards WHERE campaign_id=? AND source='follow'").get(campaignId) as {c:number}).c;
-  const totalGifts = (db.prepare("SELECT COUNT(*) c FROM pending_choices WHERE campaign_id=?").get(campaignId) as {c:number}).c;
-  const totalAnimals = (db.prepare('SELECT COUNT(*) c FROM animal_awards WHERE campaign_id=?').get(campaignId) as {c:number}).c;
-  const pendingChoices = (db.prepare(`
-    SELECT pc.id, u.username, pc.gift_name AS giftName, pc.created_at AS createdAt
-    FROM pending_choices pc JOIN users u ON u.id=pc.user_id
-    WHERE pc.campaign_id=? AND pc.consumed_at IS NULL ORDER BY pc.created_at ASC LIMIT 50
-  `).all(campaignId));
-  return { followers: followers.map(f=>({...f, animalId:f.animalId})), top10, totalFollowers, totalGifts, totalAnimals, pendingChoices };
+    .filter(a => a.count > 0).sort((a,b) => b.count-a.count || a.name.localeCompare(b.name)).slice(0,10);
+  const totalVotes = (db.prepare('SELECT COUNT(*) c FROM animal_votes WHERE campaign_id=?').get(campaignId) as {c:number}).c;
+  return { followers, top10, totalFollowers: 0, totalGifts: 0, totalAnimals: totalVotes, pendingChoices: [] };
 }
+function processVote(platformUserId: string, username: string, animalId: string, eventId: string) {
+  const animal = findAnimal(animalId);
+  if (!animal) return { error: 'Animal no válido. Escribe el nombre de un animal del catálogo.' };
+  const tx = db.transaction(() => {
+    if (db.prepare('SELECT 1 FROM processed_events WHERE event_id=?').get(eventId)) return { duplicate: true };
+    db.prepare('INSERT INTO processed_events(event_id,event_type,created_at) VALUES(?,?,?)').run(eventId,'chat-vote',now());
+    const user = getOrCreateUser(platformUserId, username);
+    const id = randomUUID();
+    db.prepare('INSERT INTO animal_votes(id,campaign_id,user_id,animal_id,event_id,created_at) VALUES(?,?,?,?,?,?)')
+      .run(id,campaignId,user.id,animal.id,eventId,now());
+    return { duplicate: false, username: user.username, animal };
+  });
+  const result = tx();
+  if (!result.duplicate && 'animal' in result && result.animal) {
+    emitState('chat', `@${result.username} votó por ${result.animal.emoji} ${result.animal.name}`);
+  }
+  return { ...result, state: snapshot() };
+}
+
 function emitState(kind: string, message: string) {
   io.emit('kingdom:state', snapshot());
   io.emit('kingdom:event', { kind, message });
@@ -149,26 +169,6 @@ function processGift(platformUserId: string, username: string, eventId: string, 
   emitState('gift', `@${result.username} envió una rosa: tiene una elección pendiente`);
   return { ...result, state: snapshot() };
 }
-function processChoice(platformUserId: string, username: string, animalId: string, eventId: string) {
-  const animal = findAnimal(animalId);
-  if (!animal) return { error: 'Animal no válido. Consulta el catálogo /api/animals.' };
-  const tx = db.transaction(() => {
-    if (db.prepare('SELECT 1 FROM processed_events WHERE event_id=?').get(eventId)) return { duplicate: true };
-    db.prepare('INSERT INTO processed_events(event_id,event_type,created_at) VALUES(?,?,?)').run(eventId,'chat-choice',now());
-    const user = getOrCreateUser(platformUserId, username);
-    const pending = db.prepare('SELECT id FROM pending_choices WHERE campaign_id=? AND user_id=? AND consumed_at IS NULL ORDER BY created_at ASC LIMIT 1')
-      .get(campaignId,user.id) as {id:string}|undefined;
-    if (!pending) return { duplicate: false, noPending: true, username: user.username };
-    db.prepare('UPDATE pending_choices SET consumed_at=? WHERE id=?').run(now(),pending.id);
-    awardAnimal(user.id, animal.id as AnimalId, 'gift');
-    return { duplicate: false, noPending: false, username: user.username, animal };
-  });
-  const result = tx();
-  if (result.duplicate) return { ...result, state: snapshot() };
-  if (result.noPending) return { ...result, state: snapshot() };
-  if ('animal' in result) emitState('gift', `@${result.username} eligió ${result.animal!.name}`);
-  return { ...result, state: snapshot() };
-}
 
 app.get('/health', async () => ({ ok:true, service:'animal-kingdom-server', mode:'demo-persistent+tiktok-adapter', database:dbPath, timestamp:now() }));
 app.get('/api/state', async () => snapshot());
@@ -191,23 +191,13 @@ const chatSchema = z.object({ username:z.string().min(1).max(64).default('fan_de
 app.post('/demo/chat', async (request,reply) => {
   const p=chatSchema.safeParse(request.body ?? {});
   if(!p.success) return reply.code(400).send({error:p.error.flatten()});
-
   const message = p.data.message.trim();
   const animal = findAnimal(message);
-
-  // Igual que en TikTok: no se requieren comandos y los comentarios normales se ignoran.
-  if (!animal) return { ignored: true, reason: 'El comentario no coincide con un animal del catálogo.' };
-
+  if (!animal) return { ignored: true, reason: 'Escribe únicamente el nombre de un animal disponible.' };
   const userId=p.data.userId ?? `demo:${p.data.username.toLowerCase()}`;
-  const result=processChoice(userId,p.data.username,animal.id,p.data.eventId ?? randomUUID());
+  const result=processVote(userId,p.data.username,animal.id,p.data.eventId ?? randomUUID());
   if ('error' in result) return reply.code(400).send(result);
-  if ('noPending' in result && result.noPending) {
-    return { ...result, reply: 'No tienes rosas pendientes. Envía una rosa antes de elegir un animal.' };
-  }
-  if ('animal' in result && result.animal) {
-    return { ...result, reply: `¡@${p.data.username} ahora es parte del reino como ${result.animal.emoji} ${result.animal.name}!` };
-  }
-  return result;
+  return { ...result, reply: `¡@${p.data.username} votó por ${animal.emoji} ${animal.name}!` };
 });
 app.post('/demo/reset', async () => {
   const tx=db.transaction(()=>{
@@ -215,6 +205,7 @@ app.post('/demo/reset', async () => {
     db.prepare('DELETE FROM pending_choices').run();
     db.prepare('DELETE FROM follow_rewards').run();
     db.prepare('DELETE FROM animal_awards').run();
+    db.prepare('DELETE FROM animal_votes').run();
     db.prepare('DELETE FROM users').run();
   });
   tx();
@@ -268,66 +259,15 @@ app.post('/api/tiktok/connect', async (request, reply) => {
 
   connection.on('chat', (data) => {
     if (data.isHistory) return;
-
     const platformUserId = String(data.user.userId || data.user.uniqueId || 'unknown');
     const displayName = data.user.nickname || data.user.uniqueId || 'espectador';
     const comment = String(data.comment ?? '').trim();
     if (!comment) return;
-
-    // La persona escribe directamente el nombre del animal, sin comandos.
-    // Los comentarios normales se ignoran; solo se procesan nombres del catálogo.
+    // Cada comentario que coincide exactamente con un animal cuenta como un voto.
     const animal = findAnimal(comment);
     if (!animal) return;
-
-    const id = eventKey(
-      data,
-      `tt-chat-choice:${platformUserId}:${data.msgId ?? randomUUID()}`,
-    );
-    const result = processChoice(platformUserId, displayName, animal.id, id);
-
-    if ('animal' in result && result.animal) {
-      // processChoice ya emite el estado y consume exactamente un crédito.
-      return;
-    }
-    if ('noPending' in result && result.noPending) {
-      emitState('chat', `@${displayName} escribió ${animal.name}, pero no tiene rosas pendientes por canjear`);
-    }
-  });
-
-  connection.on('social', (data) => {
-    if (data.isHistory || data.action !== SOCIAL_ACTION.follow) return;
-
-    const platformUserId = String(data.user.userId || data.user.uniqueId || 'unknown');
-    const displayName = data.user.nickname || data.user.uniqueId || 'nuevo_seguidor';
-
-    processFollow(
-      platformUserId,
-      displayName,
-      eventKey(data, `tt-follow:${platformUserId}`),
-    );
-  });
-
-  connection.on('gift', (data) => {
-    if (data.isHistory) return;
-
-    const giftName = String(data.giftName ?? '');
-    if (!/^rose$/i.test(giftName) && String(data.giftId) !== '5655') return;
-
-    // Solo procesar la actualización final de una racha.
-    if (data.streakable && !data.repeatEnd) return;
-
-    const platformUserId = String(data.user.userId || data.user.uniqueId || 'unknown');
-    const displayName = data.user.nickname || data.user.uniqueId || 'fan_del_reino';
-    const count = Math.max(1, Math.min(100, Number(data.repeatCount) || 1));
-
-    const base = eventKey(
-      data,
-      `tt-gift:${platformUserId}:${data.giftId}:${Date.now()}`,
-    );
-
-    for (let i = 0; i < count; i++) {
-      processGift(platformUserId, displayName, `${base}:rose:${i}`, 'Rose');
-    }
+    const id = eventKey(data, `tt-animal-vote:${platformUserId}:${data.msgId ?? randomUUID()}`);
+    processVote(platformUserId, displayName, animal.id, id);
   });
 
   connection.on('connected', () => {
